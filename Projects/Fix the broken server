@@ -1,0 +1,35 @@
+Problem:
+
+The internal shop site is down. The requirement is simple:
+curl http://shop.internal:8080/
+must return the shop page over plain HTTP on port 8080.
+This is the intended architecture on this machine:
+   . The name shop.internal resolves to 127.0.0.1 through an entry in /etc/hosts.
+   . nginx listens on port 8080 with a server block at /etc/nginx/sites-enabled/shop that proxies every request to the backend at http://127.0.0.1:9000.
+   . The backend is a Python http.server process serving the directory /opt/shop/www on port 9000. The page it serves contains the text Welcome to the shop.
+   . No firewall rule blocks traffic to port 8080.
+Right now more than one thing is broken, and the faults are independent: fixing one does not fix the others. Find every fault, fix it, and verify the site end to end.
+
+
+Solution:
+
+1. Interface, IP address, and routing: ip link, ip addr, ip route, ip route show table local
+   Verified that the loopback interface was UP, 127.0.0.1 was assigned, and the local and default routes existed.
+2. Check listening ports and processes
+   Found that the required backend port 9000 was not listening
+3. Start the Python backend on port 9000
+   CMD: python3 -m http.server 9000 --bind 127.0.0.1 --directory /opt/shop/www > /tmp/shop-backend.log 2>&1 &
+   Verify the backend: curl http://127.0.0.1:9000/ Output: Welcome to the shop
+4. Check and fix the firewall
+   CMD: iptables -L -n
+   Found a DROP rule blocking TCP port 8080. Removed it
+   CMD: iptables -D INPUT -p tcp --dport 8080 -j DROP
+5. Fix hostname resolution
+   Updated the /etc/hosts shop.internal resolves to 127.0.0.1
+6. Validate and start nginx
+   It was disabled, and I activated nginx
+   CMD: systemctl start nginx
+   The intended nginx configuration in /etc/nginx/sites-enabled/shop proxies requests to http://127.0.0.1:9000
+7. Final verification
+   curl -v http://shop.internal:8080/ 
+   Output: Welcome to the shop
